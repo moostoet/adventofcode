@@ -1,18 +1,9 @@
 import { NodeContext, NodeRuntime } from "@effect/platform-node"
 import { FileSystem } from "@effect/platform"
-import { Array, Chunk, Effect, Match, Number, Option, Schema, Stream, String } from "effect"
+import { Array, Effect, Match, Number, Schema } from "effect"
 import { pipe } from "effect/Function"
 
 const parseStringToArray = (str: string) => str.split(/\r?\n/).map(line => line.trim());
-
-const strArray = ['two1nine',
-  'eightwothree',
-  'abcone2threexyz',
-  'xtwone3four',
-  '4nineeightseven2',
-  'zoneight234',
-  '7pqrstsixteen'
-]
 
 const NumberStrings = Schema.Literal('zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine');
 
@@ -32,76 +23,64 @@ const matchNumbers = Match.type<NumberStrings>().pipe(
   Match.exhaustive
 );
 
-const numberWords: { [key: string]: string } = {
-  'zero': '0',
-  'one': '1',
-  'two': '2',
-  'three': '3',
-  'four': '4',
-  'five': '5',
-  'six': '6',
-  'seven': '7',
-  'eight': '8',
-  'nine': '9'
-};
-
 const numberRegex = /(?:0|1|2|3|4|5|6|7|8|9|zero|one|two|three|four|five|six|seven|eight|nine)/gi;
-
-const replaceStringNumbers = (str: string) => pipe(
-  str,
-  s => s.replaceAll(numberRegex, (match) => numberWords[match]),
-)
 
 const readTextFile = (path: string) => pipe(
   FileSystem.FileSystem,
-  Effect.flatMap(fs => fs.stream(path).pipe(
-    Stream.decodeText,
-    Stream.splitLines,
-    Stream.runCollect,
-    Effect.map(Chunk.toArray),
-    Effect.tap(Effect.logInfo)
-  ))
+  Effect.flatMap(fs => fs.readFile(path)),
+  Effect.map(content => content.toString()),
+  Effect.catchAll(error => Effect.fail(`Error reading file: ${error}`))
 )
 
+// const readTextFile = (path: string) => pipe(
+//   FileSystem.FileSystem,
+//   Effect.flatMap(fs => fs.stream(path).pipe(
+//     Stream.decodeText,
+//     Stream.splitLines,
+//     Stream.runCollect,
+//     Effect.map(Chunk.toArray),
+//     Effect.tap(Effect.logInfo)
+//   ))
+// )
+
 const getCalibrationValue = (input: string) =>
-  // pipe(
-  //   Effect.succeed(input),
-  //   Effect.flatMap((str) => pipe(
-  //     Effect.succeed(str),
-  //     Effect.map(replaceStringNumbers),
-  //     Effect.map(String.replaceAll(/\D/g, "")),
-  //     Effect.map(String.split("")),
-  //     Effect.map(a => Array.make(Array.headNonEmpty(a), Array.lastNonEmpty(a))),
-  //     Effect.map(Array.join('')),
-  //     Effect.map(Number.parse),
-  //   ))
-  // )
   pipe(
     Effect.succeed(input),
     Effect.flatMap((str) => pipe(
       Effect.succeed(str),
-      Effect.map((s) => Option.fromNullable(s.match(numberRegex))),
-      // match here...
-      Effect.tap((val) => Effect.log(val)),
+      Effect.map((s) => s.match(numberRegex)),
+      Effect.flatMap((m) =>
+        m
+          ? Effect.succeed(m)
+          : Effect.fail("No matches")
+      ),
+      Effect.map((matches) => matches.map((m) => {
+        if (/^\d+$/.test(m)) return m;
+
+        return matchNumbers(m as NumberStrings);
+      })),
+      Effect.map((a) => pipe(
+        a,
+        (arr) => [Array.head(arr), Array.last(arr)],
+        Array.getSomes,
+        Array.join(''),
+        Number.parse,
+      )),
     ))
   )
 
 const program = pipe(
   readTextFile("input.txt"),
-  // Effect.succeed(strArray),
+  Effect.map(parseStringToArray),
   Effect.flatMap(lines =>
-    // pipe(
-    //   lines,
-    //   Effect.forEach((e) => getCalibrationValue(e)),
-    //   Effect.map(Array.getSomes),
-    //   Effect.map(Number.sumAll),
-    //   Effect.tap((val) => Effect.log(val)),
-    // )
     pipe(
       lines,
       Effect.forEach((e) => getCalibrationValue(e)),
+      Effect.map(Array.getSomes),
+      Effect.map(Number.sumAll),
+      Effect.tap(Effect.log),
     )
   )
 )
 
-NodeRuntime.runMain(readTextFile("input").pipe(Effect.provide(NodeContext.layer)))
+NodeRuntime.runMain(program.pipe(Effect.provide(NodeContext.layer)))
