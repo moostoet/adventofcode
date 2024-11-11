@@ -23,7 +23,7 @@ const matchNumbers = Match.type<NumberStrings>().pipe(
   Match.exhaustive
 );
 
-const numberRegex = /(?:0|1|2|3|4|5|6|7|8|9|zero|one|two|three|four|five|six|seven|eight|nine)/gi;
+const numberRegex = /(?=(0|1|2|3|4|5|6|7|8|9|zero|one|two|three|four|five|six|seven|eight|nine))/gi;
 
 const readTextFile = (path: string) => pipe(
   FileSystem.FileSystem,
@@ -32,32 +32,21 @@ const readTextFile = (path: string) => pipe(
   Effect.catchAll(error => Effect.fail(`Error reading file: ${error}`))
 )
 
-// const readTextFile = (path: string) => pipe(
-//   FileSystem.FileSystem,
-//   Effect.flatMap(fs => fs.stream(path).pipe(
-//     Stream.decodeText,
-//     Stream.splitLines,
-//     Stream.runCollect,
-//     Effect.map(Chunk.toArray),
-//     Effect.tap(Effect.logInfo)
-//   ))
-// )
-
 const getCalibrationValue = (input: string) =>
   pipe(
     Effect.succeed(input),
     Effect.flatMap((str) => pipe(
       Effect.succeed(str),
-      Effect.map((s) => s.match(numberRegex)),
+      Effect.map((s) => Array.fromIterable(s.matchAll(numberRegex))),
       Effect.flatMap((m) =>
-        m
+        m.length > 0
           ? Effect.succeed(m)
           : Effect.fail("No matches")
       ),
       Effect.map((matches) => matches.map((m) => {
-        if (/^\d+$/.test(m)) return m;
+        if (/^\d+$/.test(m[1])) return m[1];
 
-        return matchNumbers(m as NumberStrings);
+        return matchNumbers(m[1] as NumberStrings);
       })),
       Effect.map((a) => pipe(
         a,
